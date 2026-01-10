@@ -24,7 +24,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "antlr4-python3-runtime", specifier = ">=4.13.2" },
+    { name = "antlr4-python3-runtime", specifier = "==4.13.2" },
     { name = "networkx", specifier = ">=3.6.1" },
     { name = "numpy", specifier = ">=2.4.1" },
     { name = "z3-solver", specifier = ">=4.15.4.0" },

@@ -1,8 +1,9 @@
 {
   "ExpandedNodes": [
     "",
-    "\\ChironCore"
+    "\\ChironCore",
+    "\\ChironCore\\turtparse"
   ],
-  "SelectedNode": "\\ChironCore\\fuzzer.py",
+  "SelectedNode": "\\ChironCore\\.python-version",
   "PreviewInSolutionExplorer": false
 }
