@@ -153,6 +153,21 @@ $ cd ChironCore
 $ uv run chiron.py -r ./example/example1.tl -d '{":x": 20, ":y": 30, ":z": 20, ":p": 40}'
 ```
 
+### Function declarations and calls
+
+ChironLang also supports reusable function-style blocks with parameters.
+Declare a function with `to`, then call it later with arguments.
+
+```text
+to drawLine(:len) [
+    forward :len
+]
+
+drawLine(100)
+```
+
+A complete sample is available at `ChironCore/example/function_calls.tl`.
+
 ### See help for other command line options
 
 Running with system-wide installed python.
@@ -284,4 +299,3 @@ options:
   -vb, --verbose VERBOSE
                         To display computation to Console
 ```
-

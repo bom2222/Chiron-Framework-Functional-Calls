@@ -1,7 +1,7 @@
 
 grammar tlang;
 
-start : instruction_list EOF
+start : functionDeclaration* instruction_list EOF
       ;
 
 instruction_list : (instruction)*
@@ -17,7 +17,13 @@ instruction : assignment
 	    | penCommand
 	    | gotoCommand
 	    | pauseCommand
+	    | functionCall
 	    ;
+
+functionDeclaration : 'to' NAME '(' parameterList? ')' '[' strict_ilist ']' ;
+parameterList : VAR (',' VAR)* ;
+functionCall : NAME '(' argumentList? ')' ;
+argumentList : expression (',' expression)* ;
 
 conditional : ifConditional | ifElseConditional ;
 
@@ -57,9 +63,6 @@ MINUS    : '-' ;
 MUL  	 : '*' ;
 DIV      : '/' ;
 
-
-// TODO :
-// procedure_declaration : 'to' NAME (VAR)+ strict_ilist 'end' ;
 
 condition : NOT condition
           |expression binCondOp expression
