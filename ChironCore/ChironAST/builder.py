@@ -4,6 +4,7 @@
 
 import os
 import sys
+import copy
 sys.path.insert(0, os.path.join("..", "turtparse"))
 
 from turtparse.tlangParser import tlangParser
@@ -16,8 +17,12 @@ class astGenPass(tlangVisitor):
 
     def __init__(self):
         self.repeatInstrCount = 0 # keeps count for no of 'repeat' instructions
+        self.functionDefs = {}
+        self.functionCallStack = []
 
     def visitStart(self, ctx:tlangParser.StartContext):
+        for funcDecl in ctx.functionDeclaration():
+            self.visit(funcDecl)
         stmtList = self.visit(ctx.instruction_list())
         return stmtList
 
@@ -36,6 +41,49 @@ class astGenPass(tlangVisitor):
             instrList.extend(visvalue)
 
         return instrList
+
+    def visitFunctionDeclaration(self, ctx:tlangParser.FunctionDeclarationContext):
+        funcName = ctx.NAME().getText()
+        if funcName in self.functionDefs:
+            raise ValueError(f"Function '{funcName}' redeclared.")
+
+        params = []
+        if ctx.parameterList():
+            params = [param.getText() for param in ctx.parameterList().VAR()]
+
+        self.functionDefs[funcName] = {
+            "params": params,
+            "body": ctx.strict_ilist(),
+        }
+        return []
+
+    def visitFunctionCall(self, ctx:tlangParser.FunctionCallContext):
+        funcName = ctx.NAME().getText()
+        if funcName not in self.functionDefs:
+            raise ValueError(f"Function '{funcName}' used before declaration.")
+
+        if funcName in self.functionCallStack:
+            raise ValueError(f"Recursive function calls are not supported: '{funcName}'.")
+
+        funcDef = self.functionDefs[funcName]
+        args = []
+        if ctx.argumentList():
+            args = [self.visit(expr) for expr in ctx.argumentList().expression()]
+
+        if len(args) != len(funcDef["params"]):
+            raise ValueError(
+                f"Function '{funcName}' expects {len(funcDef['params'])} arguments, got {len(args)}."
+            )
+
+        expandedInstr = []
+        for paramName, argExpr in zip(funcDef["params"], args):
+            expandedInstr.append((ChironAST.AssignmentCommand(ChironAST.Var(paramName), argExpr), 1))
+
+        self.functionCallStack.append(funcName)
+        bodyInstr = self.visit(funcDef["body"])
+        self.functionCallStack.pop()
+        expandedInstr.extend(copy.deepcopy(bodyInstr))
+        return expandedInstr
 
 
     def visitAssignment(self, ctx:tlangParser.AssignmentContext):
