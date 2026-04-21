@@ -32,12 +32,24 @@ class IRHandler:
         self.ir = ir
         # control flow graph
         self.cfg = cfg
+        self.programIR = None
+        self.functionCFGs = {}
+        self.callGraph = None
 
     def setIR(self, ir):
         self.ir = ir
 
     def setCFG(self, cfg):
         self.cfg = cfg
+
+    def setProgramIR(self, programIR):
+        self.programIR = programIR
+
+    def setFunctionCFGs(self, functionCFGs):
+        self.functionCFGs = functionCFGs
+
+    def setCallGraph(self, callGraph):
+        self.callGraph = callGraph
 
     def dumpIR(self, filename, ir):
         with open(filename, "wb") as f:

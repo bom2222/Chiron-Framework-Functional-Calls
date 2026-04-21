@@ -4,7 +4,6 @@
 
 import os
 import sys
-import copy
 sys.path.insert(0, os.path.join("..", "turtparse"))
 
 from turtparse.tlangParser import tlangParser
@@ -19,12 +18,30 @@ class astGenPass(tlangVisitor):
         self.repeatInstrCount = 0 # keeps count for no of 'repeat' instructions
         self.functionDefs = {}
         self.functionCallStack = []
+        self.compiledFunctions = {}
 
     def visitStart(self, ctx:tlangParser.StartContext):
         for funcDecl in ctx.functionDeclaration():
             self.visit(funcDecl)
+        for fname in self.functionDefs.keys():
+            self.compileFunction(fname)
         stmtList = self.visit(ctx.instruction_list())
-        return stmtList
+        return ChironAST.ProgramIR(stmtList, self.compiledFunctions)
+
+    def compileFunction(self, funcName):
+        if funcName in self.compiledFunctions:
+            return self.compiledFunctions[funcName]
+
+        if funcName in self.functionCallStack:
+            raise ValueError(f"Recursive function calls are not supported: '{funcName}'.")
+
+        self.functionCallStack.append(funcName)
+        funcDef = self.functionDefs[funcName]
+        bodyIR = self.visit(funcDef["body"])
+        self.functionCallStack.pop()
+        funcIR = ChironAST.FunctionIR(funcName, funcDef["params"], bodyIR)
+        self.compiledFunctions[funcName] = funcIR
+        return funcIR
 
     def visitInstruction_list(self, ctx:tlangParser.Instruction_listContext):
         instrList = []
@@ -62,9 +79,6 @@ class astGenPass(tlangVisitor):
         if funcName not in self.functionDefs:
             raise ValueError(f"Function '{funcName}' used before declaration.")
 
-        if funcName in self.functionCallStack:
-            raise ValueError(f"Recursive function calls are not supported: '{funcName}'.")
-
         funcDef = self.functionDefs[funcName]
         args = []
         if ctx.argumentList():
@@ -75,15 +89,10 @@ class astGenPass(tlangVisitor):
                 f"Function '{funcName}' expects {len(funcDef['params'])} arguments, got {len(args)}."
             )
 
-        expandedInstr = []
-        for paramName, argExpr in zip(funcDef["params"], args):
-            expandedInstr.append((ChironAST.AssignmentCommand(ChironAST.Var(paramName), argExpr), 1))
-
-        self.functionCallStack.append(funcName)
-        bodyInstr = self.visit(funcDef["body"])
-        self.functionCallStack.pop()
-        expandedInstr.extend(copy.deepcopy(bodyInstr))
-        return expandedInstr
+        if funcName in self.functionCallStack:
+            raise ValueError(f"Recursive function calls are not supported: '{funcName}'.")
+        self.compileFunction(funcName)
+        return [(ChironAST.CallCommand(funcName, args), 1)]
 
 
     def visitAssignment(self, ctx:tlangParser.AssignmentContext):

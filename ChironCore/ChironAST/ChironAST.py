@@ -21,6 +21,26 @@ class AssignmentCommand(Instruction):
         return self.lvar.__str__() + " = " + self.rexpr.__str__()
 
 
+class CallCommand(Instruction):
+    def __init__(self, fname, args):
+        self.fname = fname
+        self.args = args
+
+    def __str__(self):
+        argStr = ", ".join([str(arg) for arg in self.args])
+        return f"call {self.fname}({argStr})"
+
+
+class ReturnCommand(Instruction):
+    def __init__(self, rexpr=None):
+        self.rexpr = rexpr
+
+    def __str__(self):
+        if self.rexpr is None:
+            return "return"
+        return f"return {self.rexpr}"
+
+
 class ConditionCommand(Instruction):
     def __init__(self, condition):
         self.cond = condition
@@ -233,3 +253,16 @@ class Var(Value):
 
     def __str__(self):
         return self.varname
+
+
+class FunctionIR(AST):
+    def __init__(self, name, params, bodyIR):
+        self.name = name
+        self.params = params
+        self.bodyIR = bodyIR
+
+
+class ProgramIR(AST):
+    def __init__(self, mainIR, functions):
+        self.mainIR = mainIR
+        self.functions = functions

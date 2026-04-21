@@ -21,6 +21,7 @@ from irhandler import *
 from fuzzer import *
 import sExecution as se
 import cfg.cfgBuilder as cfgB
+import cfg.callGraphBuilder as cgB
 import submissionDFA as DFASub
 import submissionAI as AISub
 from sbflSubmission import computeRanks
@@ -198,6 +199,7 @@ if __name__ == "__main__":
 
     args = cmdparser.parse_args()
     ir = ""
+    programIR = None
 
     if not (type(args.params) is dict):
         raise ValueError("Wrong type for command line arguement '-d' or '--params'.")
@@ -213,6 +215,11 @@ if __name__ == "__main__":
         parseTree = getParseTree(args.progfl)
         astgen = astGenPass()
         ir = astgen.visitStart(parseTree)
+        if isinstance(ir, ChironAST.ProgramIR):
+            programIR = ir
+            ir = programIR.mainIR
+            irHandler.setProgramIR(programIR)
+            irHandler.setCallGraph(cgB.buildCallGraph(programIR))
 
     # Set the IR of the program.
     irHandler.setIR(ir)
@@ -221,6 +228,11 @@ if __name__ == "__main__":
     if args.control_flow:
         cfg = cfgB.buildCFG(ir, "control_flow_graph", True)
         irHandler.setCFG(cfg)
+        if programIR:
+            functionCFGs = {}
+            for fname, funcIR in programIR.functions.items():
+                functionCFGs[fname] = cfgB.buildCFG(funcIR.bodyIR, f"{fname}_cfg", True)
+            irHandler.setFunctionCFGs(functionCFGs)
     else:
         irHandler.setCFG(None)
 
@@ -230,6 +242,13 @@ if __name__ == "__main__":
 
     if args.ir:
         irHandler.pretty_print(irHandler.ir)
+        if programIR:
+            print("\n========== Call Graph ==========")
+            for src, dst in sorted(irHandler.callGraph.edges()):
+                print(f"{src} -> {dst}")
+            for fname, funcIR in programIR.functions.items():
+                print(f"\n========== Function IR : {fname}({', '.join(funcIR.params)}) ==========")
+                irHandler.pretty_print(funcIR.bodyIR)
 
     if args.abstractInterpretation:
         AISub.analyzeUsingAI(irHandler)
