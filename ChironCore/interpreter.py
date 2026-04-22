@@ -17,6 +17,7 @@ class Interpreter:
 
     def __init__(self, irHandler, params):
         self.ir = irHandler.ir
+        self.programIR = irHandler.programIR
         self.cfg = irHandler.cfg
         self.pc = 0
         self.t_screen = turtle.getscreen()
@@ -58,6 +59,9 @@ class Interpreter:
     def handlePauseCommand(self, stmt, tgt):
         raise NotImplementedError('No-Ops are not handled!')
 
+    def handleCallCommand(self, stmt, tgt):
+        raise NotImplementedError('Function calls are not handled!')
+
     def sanityCheck(self, irInstr):
         stmt, tgt = irInstr
         # if not a condition command, rel. jump can't be anything but 1
@@ -88,27 +92,38 @@ class ConcreteInterpreter(Interpreter):
             self.chironhook = Chironhooks.ConcreteChironHooks()
         self.pc = 0
 
+    def _execStatement(self, stmt, tgt):
+        if isinstance(stmt, ChironAST.AssignmentCommand):
+            return self.handleAssignment(stmt, tgt)
+        if isinstance(stmt, ChironAST.ConditionCommand):
+            return self.handleCondition(stmt, tgt)
+        if isinstance(stmt, ChironAST.MoveCommand):
+            return self.handleMove(stmt, tgt)
+        if isinstance(stmt, ChironAST.PenCommand):
+            return self.handlePen(stmt, tgt)
+        if isinstance(stmt, ChironAST.GotoCommand):
+            return self.handleGotoCommand(stmt, tgt)
+        if isinstance(stmt, ChironAST.NoOpCommand):
+            return self.handleNoOpCommand(stmt, tgt)
+        if isinstance(stmt, ChironAST.CallCommand):
+            return self.handleCallCommand(stmt, tgt)
+        raise NotImplementedError("Unknown instruction: %s, %s."%(type(stmt), stmt))
+
+    def _interpretFunctionIR(self, irList):
+        localPC = 0
+        while localPC < len(irList):
+            stmt, tgt = irList[localPC]
+            self.sanityCheck((stmt, tgt))
+            ntgt = self._execStatement(stmt, tgt)
+            localPC += ntgt
+
     def interpret(self):
         print("Program counter : ", self.pc)
         stmt, tgt = self.ir[self.pc]
         print(stmt, stmt.__class__.__name__, tgt)
 
         self.sanityCheck(self.ir[self.pc])
-
-        if isinstance(stmt, ChironAST.AssignmentCommand):
-            ntgt = self.handleAssignment(stmt, tgt)
-        elif isinstance(stmt, ChironAST.ConditionCommand):
-            ntgt = self.handleCondition(stmt, tgt)
-        elif isinstance(stmt, ChironAST.MoveCommand):
-            ntgt = self.handleMove(stmt, tgt)
-        elif isinstance(stmt, ChironAST.PenCommand):
-            ntgt = self.handlePen(stmt, tgt)
-        elif isinstance(stmt, ChironAST.GotoCommand):
-            ntgt = self.handleGotoCommand(stmt, tgt)
-        elif isinstance(stmt, ChironAST.NoOpCommand):
-            ntgt = self.handleNoOpCommand(stmt, tgt)
-        else:
-            raise NotImplementedError("Unknown instruction: %s, %s."%(type(stmt), stmt))
+        ntgt = self._execStatement(stmt, tgt)
 
         # TODO: handle statement
         self.pc += ntgt
@@ -163,4 +178,34 @@ class ConcreteInterpreter(Interpreter):
         xcor = addContext(stmt.xcor)
         ycor = addContext(stmt.ycor)
         exec("self.trtl.goto(%s, %s)" % (xcor, ycor))
+        return 1
+
+    def handleCallCommand(self, stmt, tgt):
+        print("  CallCommand")
+        if self.programIR is None or stmt.fname not in self.programIR.functions:
+            raise ValueError(f"Undefined function '{stmt.fname}'.")
+
+        functionIR = self.programIR.functions[stmt.fname]
+        argValues = []
+        for arg in stmt.args:
+            _locals = {"self": self}
+            exec("_argval = %s" % addContext(arg), globals(), _locals)
+            argValues.append(_locals["_argval"])
+
+        savedParamBindings = {}
+        for param, value in zip(functionIR.params, argValues):
+            pName = param.replace(":", "")
+            hadPreviousValue = hasattr(self.prg, pName)
+            prevValue = getattr(self.prg, pName) if hadPreviousValue else None
+            savedParamBindings[pName] = (hadPreviousValue, prevValue)
+            setattr(self.prg, pName, value)
+
+        self._interpretFunctionIR(functionIR.bodyIR)
+
+        for pName, (hadPreviousValue, prevValue) in savedParamBindings.items():
+            if hadPreviousValue:
+                setattr(self.prg, pName, prevValue)
+            else:
+                delattr(self.prg, pName)
+
         return 1
