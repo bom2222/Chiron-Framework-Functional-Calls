@@ -1,5 +1,6 @@
 import antlr4
 import pickle
+from pathlib import Path
 
 from turtparse.parseError import *
 from turtparse.tlangParser import tlangParser
@@ -8,8 +9,34 @@ from turtparse.tlangLexer import tlangLexer
 from ChironAST import ChironAST
 
 
+def resolveProgramPath(progfl):
+    rawPath = Path(progfl).expanduser()
+    candidatePaths = [
+        rawPath,
+        Path.cwd() / rawPath,
+        Path(__file__).resolve().parent / rawPath,
+        Path(__file__).resolve().parent.parent / rawPath,
+    ]
+
+    checked = []
+    for candidate in candidatePaths:
+        normalized = candidate.resolve(strict=False)
+        normalizedStr = str(normalized)
+        if normalizedStr in checked:
+            continue
+        checked.append(normalizedStr)
+        if normalized.is_file():
+            return normalized
+
+    raise FileNotFoundError(
+        "Could not find Chiron program file. "
+        f"Given path: '{progfl}'. Checked: {', '.join(checked)}"
+    )
+
+
 def getParseTree(progfl):
-    input_stream = antlr4.FileStream(progfl)
+    resolvedPath = resolveProgramPath(progfl)
+    input_stream = antlr4.FileStream(str(resolvedPath))
     print(input_stream)
     try:
         lexer = tlangLexer(input_stream)
