@@ -210,16 +210,29 @@ if __name__ == "__main__":
 
     # generate IR
     if args.bin:
-        ir = irHandler.loadIR(args.progfl)
-    else:
-        parseTree = getParseTree(args.progfl)
-        astgen = astGenPass()
-        ir = astgen.visitStart(parseTree)
-        if isinstance(ir, ChironAST.ProgramIR):
-            programIR = ir
+        irPayload = irHandler.loadIR(args.progfl)
+        if isinstance(irPayload, ChironAST.ProgramIR):
+            programIR = irPayload
             ir = programIR.mainIR
             irHandler.setProgramIR(programIR)
             irHandler.setCallGraph(cgB.buildCallGraph(programIR))
+        else:
+            ir = irPayload
+            irHandler.setProgramIR(None)
+            irHandler.setCallGraph(None)
+    else:
+        parseTree = getParseTree(args.progfl)
+        astgen = astGenPass()
+        irPayload = astgen.visitStart(parseTree)
+        if isinstance(irPayload, ChironAST.ProgramIR):
+            programIR = irPayload
+            ir = programIR.mainIR
+            irHandler.setProgramIR(programIR)
+            irHandler.setCallGraph(cgB.buildCallGraph(programIR))
+        else:
+            ir = irPayload
+            irHandler.setProgramIR(None)
+            irHandler.setCallGraph(None)
 
     # Set the IR of the program.
     irHandler.setIR(ir)
@@ -261,7 +274,8 @@ if __name__ == "__main__":
 
     if args.dump_ir:
         irHandler.pretty_print(irHandler.ir)
-        irHandler.dumpIR("optimized.kw", irHandler.ir)
+        irToDump = irHandler.programIR if irHandler.programIR is not None else irHandler.ir
+        irHandler.dumpIR("optimized.kw", irToDump)
 
     if args.symbolicExecution:
         print("symbolicExecution")
