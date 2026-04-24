@@ -79,14 +79,28 @@ class IRHandler:
         self.callGraph = callGraph
 
     def dumpIR(self, filename, ir):
+        """Serialize IR payload to disk.
+
+        If the caller provides ProgramIR (main + functions), all function IRs are
+        preserved. For legacy callers passing only a statement list, behavior
+        remains unchanged.
+        """
         with open(filename, "wb") as f:
             pickle.dump(ir, f)
 
     def loadIR(self, filename):
-        f = open(filename, "rb")
-        ir = pickle.load(f)
-        self.ir = ir
-        return ir
+        """Load IR payload from disk and normalize IRHandler state."""
+        with open(filename, "rb") as f:
+            irPayload = pickle.load(f)
+
+        if isinstance(irPayload, ChironAST.ProgramIR):
+            self.programIR = irPayload
+            self.ir = irPayload.mainIR
+        else:
+            self.programIR = None
+            self.ir = irPayload
+
+        return irPayload
 
     def updateJump(self, stmtList, index, pos):
         stmt, tgt = stmtList[index]

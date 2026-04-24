@@ -91,8 +91,11 @@ class ConcreteInterpreter(Interpreter):
         if self.args is not None and self.args.hooks:
             self.chironhook = Chironhooks.ConcreteChironHooks()
         self.pc = 0
+        self.executedInstructions = 0
 
     def _execStatement(self, stmt, tgt):
+        if not isinstance(stmt, ChironAST.NoOpCommand):
+            self.executedInstructions += 1
         if isinstance(stmt, ChironAST.AssignmentCommand):
             return self.handleAssignment(stmt, tgt)
         if isinstance(stmt, ChironAST.ConditionCommand):
