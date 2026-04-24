@@ -134,6 +134,60 @@ class ConstantValueAnalysisPass(InterproceduralPass):
 
         return expr
 
+    def _read_vars_expr(self, expr):
+        if expr is None:
+            return set()
+        if isinstance(expr, ChironAST.Var):
+            return {expr.varname}
+        if isinstance(expr, ChironAST.Num):
+            return set()
+        if isinstance(expr, ChironAST.UMinus):
+            return self._read_vars_expr(expr.expr)
+        if isinstance(expr, ChironAST.BinArithOp) or isinstance(expr, ChironAST.BinCondOp):
+            return self._read_vars_expr(expr.lexpr).union(self._read_vars_expr(expr.rexpr))
+        if isinstance(expr, ChironAST.NOT):
+            return self._read_vars_expr(expr.expr)
+        return set()
+
+    def _drop_dead_assignments_as_nop(self, irList):
+        rewritten = [None] * len(irList)
+        liveVars = set()
+        removedAssignments = 0
+
+        for idx in range(len(irList) - 1, -1, -1):
+            instruction, jump = irList[idx]
+
+            if isinstance(instruction, ChironAST.AssignmentCommand):
+                lhsName = self._var_name(instruction.lvar)
+                rhsUses = self._read_vars_expr(instruction.rexpr)
+
+                if (not self._is_internal_loop_var(lhsName)) and lhsName not in liveVars:
+                    rewritten[idx] = (ChironAST.NoOpCommand(), jump)
+                    removedAssignments += 1
+                    continue
+
+                liveVars.discard(lhsName)
+                liveVars.update(rhsUses)
+                rewritten[idx] = (instruction, jump)
+                continue
+
+            if isinstance(instruction, ChironAST.MoveCommand):
+                liveVars.update(self._read_vars_expr(instruction.expr))
+            elif isinstance(instruction, ChironAST.GotoCommand):
+                liveVars.update(self._read_vars_expr(instruction.xcor))
+                liveVars.update(self._read_vars_expr(instruction.ycor))
+            elif isinstance(instruction, ChironAST.ConditionCommand):
+                liveVars.update(self._read_vars_expr(instruction.cond))
+            elif isinstance(instruction, ChironAST.CallCommand):
+                for arg in instruction.args:
+                    liveVars.update(self._read_vars_expr(arg))
+            elif isinstance(instruction, ChironAST.ReturnCommand):
+                liveVars.update(self._read_vars_expr(instruction.rexpr))
+
+            rewritten[idx] = (instruction, jump)
+
+        return rewritten, removedAssignments
+
     def _scan_callsite_constant_args(self, irList, localEnv, callArgCandidates):
         for item in irList or []:
             if not item:
@@ -260,22 +314,29 @@ class ConstantValueAnalysisPass(InterproceduralPass):
             inferredParams[fname] = self._merge_constant_params(funcIR, observedCalls)
 
         simplifiedAssignments = 0
+        removedAssignments = 0
+
         mainRewritten, mainSimple = self._rewrite_ir(programIR.mainIR, {})
-        programIR.mainIR = mainRewritten
+        mainFinal, mainRemoved = self._drop_dead_assignments_as_nop(mainRewritten)
+        programIR.mainIR = mainFinal
         simplifiedAssignments += mainSimple
+        removedAssignments += mainRemoved
 
         rewrittenFunctions = {}
         for fname, funcIR in functions.items():
             startEnv = inferredParams.get(fname, {})
             finalBody, simple = self._rewrite_ir(funcIR.bodyIR, startEnv)
+            finalBody, removed = self._drop_dead_assignments_as_nop(finalBody)
             funcIR.bodyIR = finalBody
             rewrittenFunctions[fname] = funcIR
             simplifiedAssignments += simple
+            removedAssignments += removed
 
         programIR.functions = rewrittenFunctions
 
         analysisState["constantParamInference"] = inferredParams
         analysisState["simplifiedAssignments"] = simplifiedAssignments
+        analysisState["removedAssignments"] = removedAssignments
 
         details = []
         for fname in sorted(inferredParams.keys()):
@@ -287,6 +348,7 @@ class ConstantValueAnalysisPass(InterproceduralPass):
             details = ["No inter-procedural constant parameter bindings inferred."]
 
         details.append(f"Assignments simplified (RHS rewritten/folded): {simplifiedAssignments}")
+        details.append(f"Dead assignments converted to NOP: {removedAssignments}")
 
         return PassResult(
             name=self.name,

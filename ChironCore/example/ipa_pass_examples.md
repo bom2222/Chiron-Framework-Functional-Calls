@@ -46,14 +46,15 @@ Expected highlights:
   Summary: Constant propagation/folding applied on main and function IR.
   - drawOffset: {':start': 13}
   - Assignments simplified (RHS rewritten/folded): 3
+  - Dead assignments converted to NOP: 4
 
 == Updated IR after inter-procedural passes ==
 ...
 ========== Updated Function IR : drawOffset(:start) ==========
 ...
-[L0] :len = 18 [1]
+[L0] NOP [1]
 [L1] forward 18 [1]
-[L2] :step = 20 [1]
+[L2] NOP [1]
 [L3] right 20 [1]
 ```
 

@@ -94,7 +94,8 @@ class ConcreteInterpreter(Interpreter):
         self.executedInstructions = 0
 
     def _execStatement(self, stmt, tgt):
-        self.executedInstructions += 1
+        if not isinstance(stmt, ChironAST.NoOpCommand):
+            self.executedInstructions += 1
         if isinstance(stmt, ChironAST.AssignmentCommand):
             return self.handleAssignment(stmt, tgt)
         if isinstance(stmt, ChironAST.ConditionCommand):
