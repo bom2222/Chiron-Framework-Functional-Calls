@@ -6,6 +6,7 @@ import sys
 from ChironAST.builder import astGenPass
 import abstractInterpretation as AI
 import dataFlowAnalysis as DFA
+import interproceduralAnalysis as IPA
 from sbfl import testsuiteGenerator
 
 sys.path.insert(0, "../Submission/")
@@ -133,6 +134,13 @@ if __name__ == "__main__":
         "--dataFlowAnalysis",
         action="store_true",
         help="Run data flow analysis using worklist algorithm on a Chiron Program.",
+    )
+
+    cmdparser.add_argument(
+        "-ipa",
+        "--interproceduralAnalysis",
+        action="store_true",
+        help="Run basic inter-procedural analysis passes on a Chiron Program.",
     )
 
     cmdparser.add_argument(
@@ -271,6 +279,26 @@ if __name__ == "__main__":
         irOpt = DFASub.optimizeUsingDFA(irHandler)
         print("== Optimized IR ==")
         irHandler.pretty_print(irHandler.ir)
+
+    if args.interproceduralAnalysis:
+        interProcResults = IPA.runInterproceduralAnalysis(irHandler)
+        if not interProcResults:
+            print("== Inter-procedural Analysis ==")
+            print("No program-level function information available.")
+        else:
+            print("== Inter-procedural Analysis ==")
+            for result in interProcResults:
+                print(f"[PASS] {result.name}")
+                print(f"  Summary: {result.summary}")
+                for detail in result.details:
+                    print(f"  - {detail}")
+
+            print("\n== Updated IR after inter-procedural passes ==")
+            irHandler.pretty_print(irHandler.ir)
+            if irHandler.programIR:
+                for fname, funcIR in irHandler.programIR.functions.items():
+                    print(f"\n========== Updated Function IR : {fname}({', '.join(funcIR.params)}) ==========")
+                    irHandler.pretty_print(funcIR.bodyIR)
 
     if args.dump_ir:
         irHandler.pretty_print(irHandler.ir)
