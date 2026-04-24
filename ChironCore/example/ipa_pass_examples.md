@@ -47,10 +47,11 @@ Expected highlights:
   - drawOffset: {':start': 13}
   - Assignments simplified (RHS rewritten/folded): 3
   - Dead assignments converted to NOP: 4
+  - Function params specialized away at callsites: {'drawOffset': {0}}
 
 == Updated IR after inter-procedural passes ==
 ...
-========== Updated Function IR : drawOffset(:start) ==========
+========== Updated Function IR : drawOffset() ==========
 ...
 [L0] NOP [1]
 [L1] forward 18 [1]

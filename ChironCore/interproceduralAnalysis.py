@@ -241,6 +241,45 @@ class ConstantValueAnalysisPass(InterproceduralPass):
 
         return merged
 
+    def _specialize_function_signatures(self, programIR, inferredParams):
+        specialization = {}
+        functions = programIR.functions or {}
+
+        for fname, funcIR in functions.items():
+            constMap = inferredParams.get(fname, {})
+            if not constMap:
+                continue
+
+            removedPositions = set()
+            newParams = []
+            for idx, param in enumerate(funcIR.params):
+                if param in constMap:
+                    removedPositions.add(idx)
+                else:
+                    newParams.append(param)
+
+            if removedPositions:
+                funcIR.params = newParams
+                specialization[fname] = removedPositions
+
+        return specialization
+
+    def _rewrite_calls_for_specialization(self, irList, specialization):
+        rewritten = []
+        for item in irList or []:
+            if not item:
+                continue
+            instruction, jump = item
+
+            if isinstance(instruction, ChironAST.CallCommand) and instruction.fname in specialization:
+                removedPositions = specialization[instruction.fname]
+                newArgs = [arg for i, arg in enumerate(instruction.args) if i not in removedPositions]
+                rewritten.append((ChironAST.CallCommand(instruction.fname, newArgs), jump))
+            else:
+                rewritten.append((instruction, jump))
+
+        return rewritten
+
     def _rewrite_ir(self, irList, startEnv):
         env = dict(startEnv)
         rewrittenIR = []
@@ -313,6 +352,13 @@ class ConstantValueAnalysisPass(InterproceduralPass):
             observedCalls = callArgCandidates.get(fname, [])
             inferredParams[fname] = self._merge_constant_params(funcIR, observedCalls)
 
+        specialization = self._specialize_function_signatures(programIR, inferredParams)
+
+        # Update callsites after function signature specialization.
+        programIR.mainIR = self._rewrite_calls_for_specialization(programIR.mainIR, specialization)
+        for funcIR in functions.values():
+            funcIR.bodyIR = self._rewrite_calls_for_specialization(funcIR.bodyIR, specialization)
+
         simplifiedAssignments = 0
         removedAssignments = 0
 
@@ -337,6 +383,7 @@ class ConstantValueAnalysisPass(InterproceduralPass):
         analysisState["constantParamInference"] = inferredParams
         analysisState["simplifiedAssignments"] = simplifiedAssignments
         analysisState["removedAssignments"] = removedAssignments
+        analysisState["specializedFunctions"] = specialization
 
         details = []
         for fname in sorted(inferredParams.keys()):
@@ -349,6 +396,8 @@ class ConstantValueAnalysisPass(InterproceduralPass):
 
         details.append(f"Assignments simplified (RHS rewritten/folded): {simplifiedAssignments}")
         details.append(f"Dead assignments converted to NOP: {removedAssignments}")
+        if specialization:
+            details.append(f"Function params specialized away at callsites: {specialization}")
 
         return PassResult(
             name=self.name,
