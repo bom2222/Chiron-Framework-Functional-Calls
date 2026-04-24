@@ -6,6 +6,7 @@ Passes included now:
 - `ReachableFunctionsPass`
 - `UnusedFunctionsPass`
 - `ConstantValueAnalysisPass`
+- `InlineSingleUseFunctionsPass`
 
 ## 1) Unused-function detection
 
