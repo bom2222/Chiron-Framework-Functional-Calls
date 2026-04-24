@@ -70,6 +70,9 @@ class ConstantValueAnalysisPass(InterproceduralPass):
     def _var_name(self, varObj):
         return varObj.varname if isinstance(varObj, ChironAST.Var) else str(varObj)
 
+    def _is_internal_loop_var(self, varName):
+        return "__rep_counter_" in varName
+
     def _eval_expr(self, expr, env):
         if isinstance(expr, ChironAST.Num):
             return expr.val
@@ -139,6 +142,9 @@ class ConstantValueAnalysisPass(InterproceduralPass):
 
             if isinstance(instruction, ChironAST.AssignmentCommand):
                 name = self._var_name(instruction.lvar)
+                if self._is_internal_loop_var(name):
+                    localEnv.pop(name, None)
+                    continue
                 rhs = self._rewrite_expr(instruction.rexpr, localEnv)
                 constVal = self._eval_expr(rhs, localEnv)
                 if constVal is None:
@@ -193,10 +199,15 @@ class ConstantValueAnalysisPass(InterproceduralPass):
             instruction, jump = item
 
             if isinstance(instruction, ChironAST.AssignmentCommand):
+                lhsName = self._var_name(instruction.lvar)
+                if self._is_internal_loop_var(lhsName):
+                    env.pop(lhsName, None)
+                    rewrittenIR.append((instruction, jump))
+                    continue
+
                 oldRHS = str(instruction.rexpr)
                 rhs = self._rewrite_expr(instruction.rexpr, env)
                 rewritten = ChironAST.AssignmentCommand(instruction.lvar, rhs)
-                lhsName = self._var_name(instruction.lvar)
                 constVal = self._eval_expr(rhs, env)
                 if constVal is None:
                     env.pop(lhsName, None)
@@ -216,7 +227,9 @@ class ConstantValueAnalysisPass(InterproceduralPass):
                 continue
 
             if isinstance(instruction, ChironAST.ConditionCommand):
-                rewrittenIR.append((ChironAST.ConditionCommand(self._rewrite_expr(instruction.cond, env)), jump))
+                # Skip rewriting conditions to avoid unsound loop-condition changes
+                # in this linear (CFG-insensitive) pass.
+                rewrittenIR.append((instruction, jump))
                 continue
 
             if isinstance(instruction, ChironAST.CallCommand):

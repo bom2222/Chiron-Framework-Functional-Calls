@@ -42,19 +42,18 @@ def runProgramWithStats(irHandler, args, label):
     inptr.initProgramContext(args.params)
 
     terminated = False
-    instructionCount = 0
     startTime = time.perf_counter()
 
     while True:
-        instructionCount += 1
         terminated = inptr.interpret()
         if terminated:
             break
 
     elapsed = time.perf_counter() - startTime
+    instructionCount = inptr.executedInstructions
 
     print(f"== {label} ==")
-    print(f"Total instructions executed: {instructionCount}")
+    print(f"Total instructions executed (including function bodies): {instructionCount}")
     print(f"Execution time (seconds): {elapsed:.6f}")
 
     return instructionCount, elapsed
