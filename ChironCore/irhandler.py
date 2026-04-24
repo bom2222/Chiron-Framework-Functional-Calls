@@ -1,5 +1,6 @@
 import antlr4
 import pickle
+from pathlib import Path
 
 from turtparse.parseError import *
 from turtparse.tlangParser import tlangParser
@@ -8,8 +9,34 @@ from turtparse.tlangLexer import tlangLexer
 from ChironAST import ChironAST
 
 
+def resolveProgramPath(progfl):
+    rawPath = Path(progfl).expanduser()
+    candidatePaths = [
+        rawPath,
+        Path.cwd() / rawPath,
+        Path(__file__).resolve().parent / rawPath,
+        Path(__file__).resolve().parent.parent / rawPath,
+    ]
+
+    checked = []
+    for candidate in candidatePaths:
+        normalized = candidate.resolve(strict=False)
+        normalizedStr = str(normalized)
+        if normalizedStr in checked:
+            continue
+        checked.append(normalizedStr)
+        if normalized.is_file():
+            return normalized
+
+    raise FileNotFoundError(
+        "Could not find Chiron program file. "
+        f"Given path: '{progfl}'. Checked: {', '.join(checked)}"
+    )
+
+
 def getParseTree(progfl):
-    input_stream = antlr4.FileStream(progfl)
+    resolvedPath = resolveProgramPath(progfl)
+    input_stream = antlr4.FileStream(str(resolvedPath))
     print(input_stream)
     try:
         lexer = tlangLexer(input_stream)
@@ -52,14 +79,28 @@ class IRHandler:
         self.callGraph = callGraph
 
     def dumpIR(self, filename, ir):
+        """Serialize IR payload to disk.
+
+        If the caller provides ProgramIR (main + functions), all function IRs are
+        preserved. For legacy callers passing only a statement list, behavior
+        remains unchanged.
+        """
         with open(filename, "wb") as f:
             pickle.dump(ir, f)
 
     def loadIR(self, filename):
-        f = open(filename, "rb")
-        ir = pickle.load(f)
-        self.ir = ir
-        return ir
+        """Load IR payload from disk and normalize IRHandler state."""
+        with open(filename, "rb") as f:
+            irPayload = pickle.load(f)
+
+        if isinstance(irPayload, ChironAST.ProgramIR):
+            self.programIR = irPayload
+            self.ir = irPayload.mainIR
+        else:
+            self.programIR = None
+            self.ir = irPayload
+
+        return irPayload
 
     def updateJump(self, stmtList, index, pos):
         stmt, tgt = stmtList[index]

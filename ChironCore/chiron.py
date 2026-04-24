@@ -6,6 +6,7 @@ import sys
 from ChironAST.builder import astGenPass
 import abstractInterpretation as AI
 import dataFlowAnalysis as DFA
+import interproceduralAnalysis as IPA
 from sbfl import testsuiteGenerator
 
 sys.path.insert(0, "../Submission/")
@@ -34,6 +35,28 @@ def cleanup():
 
 def stopTurtle():
     turtle.bye()
+
+
+def runProgramWithStats(irHandler, args, label):
+    inptr = ConcreteInterpreter(irHandler, args)
+    inptr.initProgramContext(args.params)
+
+    terminated = False
+    startTime = time.perf_counter()
+
+    while True:
+        terminated = inptr.interpret()
+        if terminated:
+            break
+
+    elapsed = time.perf_counter() - startTime
+    instructionCount = inptr.executedInstructions
+
+    print(f"== {label} ==")
+    print(f"Total instructions executed (including function bodies): {instructionCount}")
+    print(f"Execution time (seconds): {elapsed:.6f}")
+
+    return instructionCount, elapsed
 
 
 if __name__ == "__main__":
@@ -136,6 +159,20 @@ if __name__ == "__main__":
     )
 
     cmdparser.add_argument(
+        "-ipa",
+        "--interproceduralAnalysis",
+        action="store_true",
+        help="Run basic inter-procedural analysis passes on a Chiron Program.",
+    )
+
+    cmdparser.add_argument(
+        "-ipa_run",
+        "--interproceduralRun",
+        action="store_true",
+        help="Run inter-procedural passes first, then execute the program with runtime stats.",
+    )
+
+    cmdparser.add_argument(
         "-sbfl",
         "--SBFL",
         action="store_true",
@@ -201,6 +238,9 @@ if __name__ == "__main__":
     ir = ""
     programIR = None
 
+    if args.run and args.interproceduralRun:
+        raise ValueError("Use either '--run' or '--interproceduralRun' in a single invocation.")
+
     if not (type(args.params) is dict):
         raise ValueError("Wrong type for command line arguement '-d' or '--params'.")
 
@@ -210,16 +250,29 @@ if __name__ == "__main__":
 
     # generate IR
     if args.bin:
-        ir = irHandler.loadIR(args.progfl)
-    else:
-        parseTree = getParseTree(args.progfl)
-        astgen = astGenPass()
-        ir = astgen.visitStart(parseTree)
-        if isinstance(ir, ChironAST.ProgramIR):
-            programIR = ir
+        irPayload = irHandler.loadIR(args.progfl)
+        if isinstance(irPayload, ChironAST.ProgramIR):
+            programIR = irPayload
             ir = programIR.mainIR
             irHandler.setProgramIR(programIR)
             irHandler.setCallGraph(cgB.buildCallGraph(programIR))
+        else:
+            ir = irPayload
+            irHandler.setProgramIR(None)
+            irHandler.setCallGraph(None)
+    else:
+        parseTree = getParseTree(args.progfl)
+        astgen = astGenPass()
+        irPayload = astgen.visitStart(parseTree)
+        if isinstance(irPayload, ChironAST.ProgramIR):
+            programIR = irPayload
+            ir = programIR.mainIR
+            irHandler.setProgramIR(programIR)
+            irHandler.setCallGraph(cgB.buildCallGraph(programIR))
+        else:
+            ir = irPayload
+            irHandler.setProgramIR(None)
+            irHandler.setCallGraph(None)
 
     # Set the IR of the program.
     irHandler.setIR(ir)
@@ -259,9 +312,30 @@ if __name__ == "__main__":
         print("== Optimized IR ==")
         irHandler.pretty_print(irHandler.ir)
 
+    if args.interproceduralAnalysis:
+        interProcResults = IPA.runInterproceduralAnalysis(irHandler)
+        if not interProcResults:
+            print("== Inter-procedural Analysis ==")
+            print("No program-level function information available.")
+        else:
+            print("== Inter-procedural Analysis ==")
+            for result in interProcResults:
+                print(f"[PASS] {result.name}")
+                print(f"  Summary: {result.summary}")
+                for detail in result.details:
+                    print(f"  - {detail}")
+
+            print("\n== Updated IR after inter-procedural passes ==")
+            irHandler.pretty_print(irHandler.ir)
+            if irHandler.programIR:
+                for fname, funcIR in irHandler.programIR.functions.items():
+                    print(f"\n========== Updated Function IR : {fname}({', '.join(funcIR.params)}) ==========")
+                    irHandler.pretty_print(funcIR.bodyIR)
+
     if args.dump_ir:
         irHandler.pretty_print(irHandler.ir)
-        irHandler.dumpIR("optimized.kw", irHandler.ir)
+        irToDump = irHandler.programIR if irHandler.programIR is not None else irHandler.ir
+        irHandler.dumpIR("optimized.kw", irToDump)
 
     if args.symbolicExecution:
         print("symbolicExecution")
@@ -295,17 +369,26 @@ if __name__ == "__main__":
         for index, x in enumerate(corpus):
             print(f"\tInput {index} : {x.data}")
 
-    if args.run:
-        # for stmt,pc in ir:
-        #     print(str(stmt.__class__.__bases__[0].__name__),pc)
+    if args.interproceduralRun:
+        interProcResults = IPA.runInterproceduralAnalysis(irHandler)
+        if interProcResults:
+            print("== Inter-procedural Analysis (pre-run) ==")
+            for result in interProcResults:
+                print(f"[PASS] {result.name}")
+                print(f"  Summary: {result.summary}")
+                for detail in result.details:
+                    print(f"  - {detail}")
 
-        inptr = ConcreteInterpreter(irHandler, args)
-        terminated = False
-        inptr.initProgramContext(args.params)
-        while True:
-            terminated = inptr.interpret()
-            if terminated:
-                break
+        runProgramWithStats(irHandler, args, "IPA Run Stats")
+        print("Program Ended.")
+        print()
+        print("Press ESCAPE to exit")
+        turtle.listen()
+        turtle.onkeypress(stopTurtle, "Escape")
+        turtle.mainloop()
+
+    if args.run:
+        runProgramWithStats(irHandler, args, "Normal Run Stats")
         print("Program Ended.")
         print()
         print("Press ESCAPE to exit")
