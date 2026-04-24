@@ -37,6 +37,29 @@ def stopTurtle():
     turtle.bye()
 
 
+def runProgramWithStats(irHandler, args, label):
+    inptr = ConcreteInterpreter(irHandler, args)
+    inptr.initProgramContext(args.params)
+
+    terminated = False
+    instructionCount = 0
+    startTime = time.perf_counter()
+
+    while True:
+        instructionCount += 1
+        terminated = inptr.interpret()
+        if terminated:
+            break
+
+    elapsed = time.perf_counter() - startTime
+
+    print(f"== {label} ==")
+    print(f"Total instructions executed: {instructionCount}")
+    print(f"Execution time (seconds): {elapsed:.6f}")
+
+    return instructionCount, elapsed
+
+
 if __name__ == "__main__":
     print(Release)
     print(
@@ -144,6 +167,13 @@ if __name__ == "__main__":
     )
 
     cmdparser.add_argument(
+        "-ipa_run",
+        "--interproceduralRun",
+        action="store_true",
+        help="Run inter-procedural passes first, then execute the program with runtime stats.",
+    )
+
+    cmdparser.add_argument(
         "-sbfl",
         "--SBFL",
         action="store_true",
@@ -208,6 +238,9 @@ if __name__ == "__main__":
     args = cmdparser.parse_args()
     ir = ""
     programIR = None
+
+    if args.run and args.interproceduralRun:
+        raise ValueError("Use either '--run' or '--interproceduralRun' in a single invocation.")
 
     if not (type(args.params) is dict):
         raise ValueError("Wrong type for command line arguement '-d' or '--params'.")
@@ -337,17 +370,26 @@ if __name__ == "__main__":
         for index, x in enumerate(corpus):
             print(f"\tInput {index} : {x.data}")
 
-    if args.run:
-        # for stmt,pc in ir:
-        #     print(str(stmt.__class__.__bases__[0].__name__),pc)
+    if args.interproceduralRun:
+        interProcResults = IPA.runInterproceduralAnalysis(irHandler)
+        if interProcResults:
+            print("== Inter-procedural Analysis (pre-run) ==")
+            for result in interProcResults:
+                print(f"[PASS] {result.name}")
+                print(f"  Summary: {result.summary}")
+                for detail in result.details:
+                    print(f"  - {detail}")
 
-        inptr = ConcreteInterpreter(irHandler, args)
-        terminated = False
-        inptr.initProgramContext(args.params)
-        while True:
-            terminated = inptr.interpret()
-            if terminated:
-                break
+        runProgramWithStats(irHandler, args, "IPA Run Stats")
+        print("Program Ended.")
+        print()
+        print("Press ESCAPE to exit")
+        turtle.listen()
+        turtle.onkeypress(stopTurtle, "Escape")
+        turtle.mainloop()
+
+    if args.run:
+        runProgramWithStats(irHandler, args, "Normal Run Stats")
         print("Program Ended.")
         print()
         print("Press ESCAPE to exit")

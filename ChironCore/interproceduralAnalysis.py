@@ -131,39 +131,6 @@ class ConstantValueAnalysisPass(InterproceduralPass):
 
         return expr
 
-    def _read_vars_expr(self, expr):
-        if expr is None:
-            return set()
-        if isinstance(expr, ChironAST.Var):
-            return {expr.varname}
-        if isinstance(expr, ChironAST.Num):
-            return set()
-        if isinstance(expr, ChironAST.UMinus):
-            return self._read_vars_expr(expr.expr)
-        if isinstance(expr, ChironAST.BinArithOp) or isinstance(expr, ChironAST.BinCondOp):
-            return self._read_vars_expr(expr.lexpr).union(self._read_vars_expr(expr.rexpr))
-        if isinstance(expr, ChironAST.NOT):
-            return self._read_vars_expr(expr.expr)
-        return set()
-
-    def _read_vars_instruction(self, instruction):
-        if isinstance(instruction, ChironAST.AssignmentCommand):
-            return self._read_vars_expr(instruction.rexpr)
-        if isinstance(instruction, ChironAST.MoveCommand):
-            return self._read_vars_expr(instruction.expr)
-        if isinstance(instruction, ChironAST.GotoCommand):
-            return self._read_vars_expr(instruction.xcor).union(self._read_vars_expr(instruction.ycor))
-        if isinstance(instruction, ChironAST.ConditionCommand):
-            return self._read_vars_expr(instruction.cond)
-        if isinstance(instruction, ChironAST.CallCommand):
-            used = set()
-            for arg in instruction.args:
-                used.update(self._read_vars_expr(arg))
-            return used
-        if isinstance(instruction, ChironAST.ReturnCommand):
-            return self._read_vars_expr(instruction.rexpr)
-        return set()
-
     def _scan_callsite_constant_args(self, irList, localEnv, callArgCandidates):
         for item in irList or []:
             if not item:
@@ -266,34 +233,6 @@ class ConstantValueAnalysisPass(InterproceduralPass):
 
         return rewrittenIR, simplifiedAssignments
 
-    def _mark_dead_constant_assignments_as_nop(self, irList):
-        liveVars = set()
-        rewritten = [None] * len(irList)
-        skipped = 0
-
-        for i in range(len(irList) - 1, -1, -1):
-            instruction, jump = irList[i]
-
-            if isinstance(instruction, ChironAST.AssignmentCommand):
-                lhs = self._var_name(instruction.lvar)
-                rhsUses = self._read_vars_expr(instruction.rexpr)
-                rhsIsConstant = isinstance(instruction.rexpr, ChironAST.Num)
-
-                if rhsIsConstant and lhs not in liveVars:
-                    rewritten[i] = (ChironAST.NoOpCommand(), jump)
-                    skipped += 1
-                    continue
-
-                liveVars.discard(lhs)
-                liveVars.update(rhsUses)
-                rewritten[i] = (instruction, jump)
-                continue
-
-            liveVars.update(self._read_vars_instruction(instruction))
-            rewritten[i] = (instruction, jump)
-
-        return rewritten, skipped
-
     def run(self, programIR, callGraph, analysisState):
         functions = programIR.functions or {}
 
@@ -309,26 +248,21 @@ class ConstantValueAnalysisPass(InterproceduralPass):
 
         simplifiedAssignments = 0
         mainRewritten, mainSimple = self._rewrite_ir(programIR.mainIR, {})
-        mainFinal, mainSkipped = self._mark_dead_constant_assignments_as_nop(mainRewritten)
-        programIR.mainIR = mainFinal
+        programIR.mainIR = mainRewritten
         simplifiedAssignments += mainSimple
 
         rewrittenFunctions = {}
-        skippedAssignments = mainSkipped
         for fname, funcIR in functions.items():
             startEnv = inferredParams.get(fname, {})
-            after, simple = self._rewrite_ir(funcIR.bodyIR, startEnv)
-            finalBody, skipped = self._mark_dead_constant_assignments_as_nop(after)
+            finalBody, simple = self._rewrite_ir(funcIR.bodyIR, startEnv)
             funcIR.bodyIR = finalBody
             rewrittenFunctions[fname] = funcIR
             simplifiedAssignments += simple
-            skippedAssignments += skipped
 
         programIR.functions = rewrittenFunctions
 
         analysisState["constantParamInference"] = inferredParams
         analysisState["simplifiedAssignments"] = simplifiedAssignments
-        analysisState["skippedInstructions"] = skippedAssignments
 
         details = []
         for fname in sorted(inferredParams.keys()):
@@ -340,7 +274,6 @@ class ConstantValueAnalysisPass(InterproceduralPass):
             details = ["No inter-procedural constant parameter bindings inferred."]
 
         details.append(f"Assignments simplified (RHS rewritten/folded): {simplifiedAssignments}")
-        details.append(f"Instructions skipped in -r (converted to NOP): {skippedAssignments}")
 
         return PassResult(
             name=self.name,
